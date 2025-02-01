@@ -1,0 +1,85 @@
+---
+- name: Nextcloud
+  hosts: nextcloud
+  become: true
+  vars:
+    nextcloud_version: "latest"
+    nextcloud_install_dir: "/var/www/nextcloud"
+    nextcloud_download_url: "https://download.nextcloud.com/server/releases/{{ nextcloud_version }}.zip"
+    server_domain: "84.201.148.22"
+  tasks:
+    - name: Установка таймзоны
+      community.general.timezone:
+        name: Europe/Moscow
+    
+    - name: Обновление apt кэша
+      apt:
+        update_cache: yes
+        upgrade: "yes"
+    
+    - name: Установка пакетов
+      apt:
+        name:
+          - apache2
+          - libapache2-mod-php
+          - php
+          - php-gd
+          - php-json
+          - php-mysql
+          - php-curl
+          - php-xml
+          - php-mbstring
+          - php-intl
+          - php-zip
+          - php-bcmath
+          - unzip
+          - wget
+        state: present
+
+    - name: Скачивание архива Nextcloud
+      get_url:
+        url: "{{ nextcloud_download_url }}"
+        dest: /tmp/nextcloud.zip
+        mode: '0644'
+
+    - name: Распаковка Nextcloud
+      unarchive:
+        src: /tmp/nextcloud.zip
+        dest: /var/www/
+        copy: no
+        creates: "{{ nextcloud_install_dir }}"
+
+    - name: Изменение владельца каталога Nextcloud
+      file:
+        path: "{{ nextcloud_install_dir }}"
+        owner: www-data
+        group: www-data
+        state: directory
+        recurse: yes
+
+    - name: Создание Apache виртуального хоста для Nextcloud
+      template:
+        src: nextcloud.conf.j2
+        dest: /etc/apache2/sites-available/nextcloud.conf
+        mode: '0644'
+
+    - name: Включение требуемых модулей Apache
+      apache2_module:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - rewrite
+        - headers
+        - env
+        - dir
+        - mime
+
+    - name: Включение сайта Nextcloud
+      command: a2ensite nextcloud.conf
+      notify: Перезагрузка Apache
+
+  handlers:
+    - name: Перезагрузка Apache
+      service:
+        name: apache2
+        state: reloaded
